@@ -60,11 +60,12 @@ def install_rsvg_convert():
         return False
 
 def convert_svg_to_png(svg_path, output_path, size):
-    """Convertir SVG en PNG avec la taille spécifiée"""
+    """Convertir SVG en PNG avec la taille spécifiée, sans canal alpha"""
     cmd = [
         "rsvg-convert",
         "-w", str(size),
         "-h", str(size),
+        "-b", "white",  # Fond blanc opaque
         "-o", str(output_path),
         str(svg_path)
     ]
