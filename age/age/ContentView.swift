@@ -7,6 +7,7 @@
 
 import SwiftUI
 import PhotosUI
+import StoreKit
 
 struct ContentView: View {
     @StateObject private var agePredictor = AgePredictor()
@@ -18,6 +19,11 @@ struct ContentView: View {
     @State private var showingImageSource = false
     @State private var showingShareSheet = false
     @State private var imageToShare: UIImage?
+    @State private var showingInfoSheet = false
+
+    // UserDefaults keys
+    private let calculationCountKey = "AgeCalculationCount"
+    private let hasRequestedReviewKey = "HasRequestedReview"
 
     var body: some View {
         NavigationView {
@@ -26,19 +32,33 @@ struct ContentView: View {
                 // Header avec design moderne
                 VStack(spacing: 8) {
                     HStack {
-                        Image(systemName: "brain.head.profile")
-                            .font(.title)
-                            .foregroundColor(.orange)
-                        Text("Prédicteur d'Âge")
-                            .font(.largeTitle)
-                            .fontWeight(.bold)
-                            .foregroundStyle(
-                                LinearGradient(
-                                    gradient: Gradient(colors: [.orange, .blue]),
-                                    startPoint: .leading,
-                                    endPoint: .trailing
+                        HStack(spacing: 8) {
+                            Image(systemName: "brain.head.profile")
+                                .font(.title)
+                                .foregroundColor(.orange)
+                            Text("Prédicteur d'Âge")
+                                .font(.title)
+                                .fontWeight(.bold)
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        gradient: Gradient(colors: [.orange, .blue]),
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
                                 )
-                            )
+                        }
+                        .layoutPriority(1)
+
+                        Spacer()
+
+                        Button(action: {
+                            showingInfoSheet = true
+                        }) {
+                            Image(systemName: "info.circle")
+                                .font(.title2)
+                                .foregroundColor(.blue)
+                        }
+                        .padding(.leading, 8)
                     }
 
                     Text("Intelligence artificielle pour l'estimation d'âge")
@@ -100,6 +120,10 @@ struct ContentView: View {
 
                         Button("Diagnostiquer") {
                             ModelChecker.checkModelAvailability()
+                            // Debug: afficher les stats utilisateur
+                            let count = UserDefaults.standard.integer(forKey: calculationCountKey)
+                            let hasRequested = UserDefaults.standard.bool(forKey: hasRequestedReviewKey)
+                            print("📊 Debug - Calculs: \(count), Évaluation demandée: \(hasRequested)")
                         }
                         .padding()
                         .background(Color.orange)
@@ -198,16 +222,12 @@ struct ContentView: View {
                                 Button(action: {
                                     generateAndShareImage()
                                 }) {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "square.and.arrow.up")
-                                        Text("Partager")
-                                            .font(.caption)
-                                    }
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(Color.blue)
-                                    .cornerRadius(8)
+                                    Image(systemName: "square.and.arrow.up")
+                                        .font(.title3)
+                                        .foregroundColor(.white)
+                                        .padding(8)
+                                        .background(Color.blue)
+                                        .clipShape(Circle())
                                 }
                             }
 
@@ -346,6 +366,9 @@ struct ContentView: View {
                 }
             }
         }
+        .sheet(isPresented: $showingInfoSheet) {
+            InfoView()
+        }
     }
 
     private func predictAge() {
@@ -358,6 +381,36 @@ struct ContentView: View {
             DispatchQueue.main.async {
                 self.isLoading = false
                 self.predictionResult = result
+
+                // Incrémenter le compteur et vérifier pour la demande d'évaluation
+                if result != nil {
+                    self.incrementCalculationCount()
+                }
+            }
+        }
+    }
+
+    private func incrementCalculationCount() {
+        let currentCount = UserDefaults.standard.integer(forKey: calculationCountKey)
+        let newCount = currentCount + 1
+        UserDefaults.standard.set(newCount, forKey: calculationCountKey)
+
+        print("✅ Nombre de calculs d'âge: \(newCount)")
+
+        // Demander une évaluation après 5 calculs (une seule fois)
+        if newCount >= 5 && !UserDefaults.standard.bool(forKey: hasRequestedReviewKey) {
+            requestAppReview()
+        }
+    }
+
+    private func requestAppReview() {
+        print("📱 Demande d'évaluation de l'application")
+        UserDefaults.standard.set(true, forKey: hasRequestedReviewKey)
+
+        // Demander l'évaluation avec un léger délai pour ne pas interrompre l'expérience utilisateur
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+                SKStoreReviewController.requestReview(in: scene)
             }
         }
     }
@@ -406,30 +459,35 @@ struct ContentView: View {
 
             // Position du texte (coin supérieur droit avec marge)
             let margin: CGFloat = fontSize * 0.5
+            let backgroundPadding = margin * 0.8
+            let maxTextWidth = max(mainTextSize.width, subtitleSize.width)
+
             let mainTextRect = CGRect(
-                x: selectedImage.size.width - mainTextSize.width - margin,
+                x: selectedImage.size.width - maxTextWidth - backgroundPadding + (maxTextWidth - mainTextSize.width) / 2,
                 y: margin,
                 width: mainTextSize.width,
                 height: mainTextSize.height
             )
 
             let subtitleRect = CGRect(
-                x: selectedImage.size.width - subtitleSize.width - margin,
+                x: selectedImage.size.width - maxTextWidth - backgroundPadding + (maxTextWidth - subtitleSize.width) / 2,
                 y: margin + mainTextSize.height + fontSize * 0.2,
                 width: subtitleSize.width,
                 height: subtitleSize.height
             )
 
-            // Dessiner un fond semi-transparent
+            // Dessiner un fond rectangulaire semi-transparent
             let backgroundRect = CGRect(
-                x: min(mainTextRect.minX, subtitleRect.minX) - margin * 0.5,
-                y: margin - margin * 0.3,
-                width: max(mainTextSize.width, subtitleSize.width) + margin,
-                height: mainTextSize.height + subtitleSize.height + fontSize * 0.4 + margin * 0.6
+                x: selectedImage.size.width - maxTextWidth - backgroundPadding * 2,
+                y: margin - backgroundPadding * 0.5,
+                width: maxTextWidth + backgroundPadding * 2,
+                height: mainTextSize.height + subtitleSize.height + fontSize * 0.2 + backgroundPadding
             )
 
-            context.cgContext.setFillColor(UIColor.black.withAlphaComponent(0.6).cgColor)
-            context.cgContext.fillEllipse(in: backgroundRect.insetBy(dx: -margin * 0.3, dy: -margin * 0.3))
+            context.cgContext.setFillColor(UIColor.black.withAlphaComponent(0.75).cgColor)
+            context.cgContext.fill(backgroundRect)
+            context.cgContext.setFillColor(UIColor.black.withAlphaComponent(0.2).cgColor)
+            context.cgContext.stroke(backgroundRect)
 
             // Dessiner le texte
             mainText.draw(in: mainTextRect, withAttributes: textAttributes)
@@ -454,6 +512,90 @@ struct ShareSheet: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+struct InfoView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    // Icône et titre
+                    VStack(spacing: 12) {
+                        Image(systemName: "info.circle.fill")
+                            .font(.system(size: 60))
+                            .foregroundColor(.blue)
+
+                        Text("À propos de cette application")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top)
+
+                    // Description de l'application
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Fonctionnement")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+
+                        Text("Cette application tente de déterminer l'âge à partir d'une photo en utilisant une version du modèle CLIP (Contrastive Language-Image Pre-Training) d'OpenAI.")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text("Confidentialité")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                            .padding(.top, 8)
+
+                        Text("Aucune donnée n'est envoyée sur le web. Les calculs se font localement sur votre appareil.")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text("Avertissement")
+                            .font(.headline)
+                            .foregroundColor(.orange)
+                            .padding(.top, 8)
+
+                        Text("Elle est fournie à titre expérimental par Pseudoxia.")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        // Lien cliquable
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Plus d'informations")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                                .padding(.top, 8)
+
+                            Link("https://www.pseudoxia.org", destination: URL(string: "https://www.pseudoxia.org")!)
+                                .font(.body)
+                                .foregroundColor(.blue)
+                        }
+                    }
+                    .padding(.horizontal)
+
+                    Spacer()
+                }
+            }
+            .navigationTitle("Information")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarBackButtonHidden(true)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Fermer") {
+                        dismiss()
+                    }
+                    .foregroundColor(.blue)
+                }
+            }
+        }
+    }
 }
 
 #Preview {

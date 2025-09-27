@@ -149,19 +149,28 @@ class AgePredictor: ObservableObject {
             multiArray[index].doubleValue
         }
 
-        // Calcul de l'âge prédit comme moyenne pondérée
-        let weightedSum = probabilities.enumerated().reduce(0.0) { sum, element in
+        // Top prédictions (toutes les prédictions triées par probabilité)
+        let sortedPredictions = probabilities.enumerated().sorted { $0.element > $1.element }
+
+        // Prendre les 10 meilleures prédictions pour le calcul de la moyenne pondérée
+        let topPredictionsForAverage = Array(sortedPredictions.prefix(10))
+
+        // Calcul de l'âge prédit comme moyenne pondérée des top prédictions
+        let weightedSum = topPredictionsForAverage.reduce(0.0) { sum, element in
             let (index, probability) = element
             let age = Double(index + 1) // Les âges commencent à 1
             return sum + (age * probability)
         }
 
-        let totalWeight = probabilities.reduce(0.0, +)
-        let weightedAverageAge = totalWeight > 0 ? weightedSum / totalWeight : 1.0
+        let totalWeight = topPredictionsForAverage.reduce(0.0) { sum, element in
+            return sum + element.element
+        }
+
+        let weightedAverageAge = totalWeight > 0 ? weightedSum / totalWeight : Double(sortedPredictions[0].offset + 1)
         let predictedAge = Int(round(weightedAverageAge))
 
-        // Calcul de l'écart-type (variance pondérée)
-        let variance = probabilities.enumerated().reduce(0.0) { sum, element in
+        // Calcul de l'écart-type basé sur les top prédictions
+        let variance = topPredictionsForAverage.reduce(0.0) { sum, element in
             let (index, probability) = element
             let age = Double(index + 1)
             let deviation = age - weightedAverageAge
@@ -173,8 +182,7 @@ class AgePredictor: ObservableObject {
         // Confiance = probabilité maximale
         let maxProbability = probabilities.max() ?? 0.0
 
-        // Top 3 prédictions
-        let sortedPredictions = probabilities.enumerated().sorted { $0.element > $1.element }
+        // Top 3 prédictions pour l'affichage
         let topPredictions = Array(sortedPredictions.prefix(3)).map { (index, prob) in
             AgePrediction(age: index + 1, confidence: prob)
         }
