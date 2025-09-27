@@ -9,9 +9,48 @@ class AgePredictor: ObservableObject {
 
     @Published var isModelLoaded = false
     @Published var errorMessage: String?
+    @Published var isDeviceCompatible = true
 
     init() {
-        loadModel()
+        checkDeviceCompatibility()
+    }
+
+    private func checkDeviceCompatibility() {
+        // Vérifier si Core ML est disponible
+        if #available(iOS 11.0, *) {
+            // Vérifier les capacités réelles de l'appareil avec Core ML
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                do {
+                    // Tenter de créer un modèle Core ML simple pour tester la compatibilité
+                    if let modelURL = Bundle.main.url(forResource: "AgePredictorModel", withExtension: "mlmodelc") ??
+                                     Bundle.main.url(forResource: "AgePredictorModel", withExtension: "mlpackage") {
+                        let _ = try MLModel(contentsOf: modelURL)
+                        DispatchQueue.main.async {
+                            self?.loadModel()
+                        }
+                    } else {
+                        // Si le modèle n'est pas trouvé, on considère que l'appareil est compatible mais le modèle manque
+                        DispatchQueue.main.async {
+                            self?.loadModel()
+                        }
+                    }
+                } catch {
+                    print("❌ Erreur de compatibilité Core ML: \(error)")
+                    DispatchQueue.main.async {
+                        self?.isDeviceCompatible = false
+                        if error.localizedDescription.contains("Neural Engine") ||
+                           error.localizedDescription.contains("not supported") {
+                            self?.errorMessage = "Cet appareil ne supporte pas les modèles d'intelligence artificielle Core ML. Un iPhone 6s/iPad Air 2 ou plus récent est requis."
+                        } else {
+                            self?.errorMessage = "Cet appareil ne dispose pas de suffisamment de puissance de calcul pour exécuter des modèles d'IA complexes. Un appareil plus récent est recommandé."
+                        }
+                    }
+                }
+            }
+        } else {
+            isDeviceCompatible = false
+            errorMessage = "Cette application nécessite iOS 11.0 ou plus récent pour utiliser Core ML."
+        }
     }
 
     private func loadModel() {
@@ -110,9 +149,29 @@ class AgePredictor: ObservableObject {
             multiArray[index].doubleValue
         }
 
-        let maxIndex = probabilities.enumerated().max(by: { $0.element < $1.element })?.offset ?? 0
-        let predictedAge = maxIndex + 1 // Les âges commencent à 1
-        let confidence = probabilities[maxIndex]
+        // Calcul de l'âge prédit comme moyenne pondérée
+        let weightedSum = probabilities.enumerated().reduce(0.0) { sum, element in
+            let (index, probability) = element
+            let age = Double(index + 1) // Les âges commencent à 1
+            return sum + (age * probability)
+        }
+
+        let totalWeight = probabilities.reduce(0.0, +)
+        let weightedAverageAge = totalWeight > 0 ? weightedSum / totalWeight : 1.0
+        let predictedAge = Int(round(weightedAverageAge))
+
+        // Calcul de l'écart-type (variance pondérée)
+        let variance = probabilities.enumerated().reduce(0.0) { sum, element in
+            let (index, probability) = element
+            let age = Double(index + 1)
+            let deviation = age - weightedAverageAge
+            return sum + (probability * deviation * deviation)
+        }
+        let normalizedVariance = totalWeight > 0 ? variance / totalWeight : 0.0
+        let standardDeviation = sqrt(normalizedVariance)
+
+        // Confiance = probabilité maximale
+        let maxProbability = probabilities.max() ?? 0.0
 
         // Top 3 prédictions
         let sortedPredictions = probabilities.enumerated().sorted { $0.element > $1.element }
@@ -122,7 +181,8 @@ class AgePredictor: ObservableObject {
 
         return AgePredictionResult(
             predictedAge: predictedAge,
-            confidence: confidence,
+            confidence: maxProbability,
+            standardDeviation: standardDeviation,
             topPredictions: topPredictions
         )
     }
@@ -131,6 +191,7 @@ class AgePredictor: ObservableObject {
 struct AgePredictionResult {
     let predictedAge: Int
     let confidence: Double
+    let standardDeviation: Double
     let topPredictions: [AgePrediction]
 }
 
@@ -142,6 +203,7 @@ struct AgePrediction {
 enum AgeError: LocalizedError {
     case modelNotFound
     case predictionFailed
+    case deviceNotCompatible
 
     var errorDescription: String? {
         switch self {
@@ -149,6 +211,8 @@ enum AgeError: LocalizedError {
             return "Le modèle de prédiction d'âge n'a pas été trouvé"
         case .predictionFailed:
             return "La prédiction a échoué"
+        case .deviceNotCompatible:
+            return "Cet appareil ne supporte pas Core ML"
         }
     }
 }
