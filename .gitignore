@@ -1,0 +1,7 @@
+.DS_Store
+agc/.DS_Store
+agc/clip-ViT-B-32/
+agc/AgePredictor.mlpackage/Manifest.json
+agc/AgePredictor.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+agc/AgePredictor.mlpackage/Data/com.apple.CoreML/model.mlmodel
+agc/luc.JPEG
