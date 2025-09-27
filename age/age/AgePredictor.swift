@@ -27,12 +27,12 @@ class AgePredictor: ObservableObject {
                 }
 
                 // Charger uniquement le modèle CLIP complet pour de vraies prédictions
-                var modelURL = Bundle.main.url(forResource: "AgePredictor", withExtension: "mlmodelc")
+                var modelURL = Bundle.main.url(forResource: "AgePredictorModel", withExtension: "mlmodelc")
 
                 // Si le modèle compilé n'est pas trouvé, essayer .mlpackage
                 if modelURL == nil {
                     print("📋 Modèle .mlmodelc non trouvé, recherche .mlpackage...")
-                    modelURL = Bundle.main.url(forResource: "AgePredictor", withExtension: "mlpackage")
+                    modelURL = Bundle.main.url(forResource: "AgePredictorModel", withExtension: "mlpackage")
 
                     if let packageURL = modelURL {
                         print("✅ Trouvé modèle .mlpackage: \(packageURL.lastPathComponent)")
